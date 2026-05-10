@@ -1,0 +1,29 @@
+H - 
+alpha: 1. diff 4.313
+beta: 10. diff 1.828
+
+He -
+1. diff 4.603
+3. diff -1.91
+
+I -
+2. diff 1.614
+24. diff 0.68
+18. diff -0.573
+
+In - 
+3. diff -1.429
+23. diff -2.038
+
+Rb -
+3. diff 0.77
+4. diff 1.85
+
+Ti -
+3. diff 1.48
+4. diff -0.05
+8 suspect
+11. diff 3.12
+
+
+O - 32, 22?
