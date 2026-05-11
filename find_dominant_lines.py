@@ -364,6 +364,82 @@ def main(
     if show_plot:
         plt.show()
 
+    HI_lines = [410.26, 434.34, 486.1]
+    HI_intensities = [6.660306e-02, 1.072919e-01, 3.394972e-01]
+    HI_Ag = [7.0070e+07, 1.2652e+08, 2.6942e+08]
+    HI_E = [13.22070389, 13.0545017, 12.7485393]
+    boltzmann_plot(HI_lines, HI_intensities, HI_Ag, HI_E)
+
+def boltzmann_plot(lines, intensities, Ag, E, ax: plt.Axes | None = None, show: bool = True) -> tuple[float, float]:
+    """Compute Boltzmann plot from line data and perform linear regression.
+
+    Args:
+        lines: array-like of wavelengths (lambda) in nm.
+        intensities: array-like of measured intensities.
+        Ag: array-like of A*g values for each line.
+        E: array-like of excitation energies (eV) for each line.
+        ax: optional Matplotlib Axes to draw on; creates one if None.
+        show: whether to call `plt.show()` after plotting.
+
+    Returns:
+        (slope, intercept) of the fitted line (log_val = slope * E + intercept).
+    """
+    lines = np.asarray(lines, dtype=float)
+    intensities = np.asarray(intensities, dtype=float)
+    Ag = np.asarray(Ag, dtype=float)
+    E = np.asarray(E, dtype=float)
+
+    if not (lines.shape == intensities.shape == Ag.shape == E.shape):
+        raise ValueError("`lines`, `intensities`, `Ag`, and `E` must have the same shape")
+
+    # Compute log values for Boltzmann plot: ln(I * lambda / (A*g))
+    with np.errstate(divide="raise", invalid="raise"):
+        try:
+            log_val = np.log(intensities * lines / Ag)
+        except FloatingPointError:
+            # Fallback: use nan-safe log
+            log_val = np.log(np.where((intensities * lines / Ag) > 0, (intensities * lines / Ag), np.nan))
+
+    # Linear regression: fit log_val = slope * E + intercept
+    slope, intercept = np.polyfit(E[~np.isnan(log_val)], log_val[~np.isnan(log_val)], 1)
+
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        created_fig = True
+
+    ax.scatter(E, log_val, color="tab:blue", label="data")
+    E_line = np.linspace(np.nanmin(E), np.nanmax(E), 200)
+    ax.plot(E_line, slope * E_line + intercept, color="tab:red", label=f"fit: y={slope:.4e}x+{intercept:.4e}")
+    ax.set_xlabel("E (eV)")
+    ax.set_ylabel("ln(I * lambda / A_g)")
+    ax.grid(alpha=0.25)
+    ax.legend()
+
+    # Compute temperature from slope. For a Boltzmann plot slope = -1/(k_B * T).
+    k_B_eV_per_K = 8.617333262145e-5  # Boltzmann constant in eV/K
+    if slope == 0 or np.isnan(slope):
+        T_eV = float('nan')
+        T_K = float('nan')
+    else:
+        # Use physical relation: slope = -1/(k_B * T)
+        # therefore T_K = -1 / (k_B * slope) and T_eV = k_B * T_K = -1 / slope
+        T_K = -1.0 / (k_B_eV_per_K * slope)
+        T_eV = -1.0 / slope
+
+    # Annotate temperature on the plot
+    try:
+        if np.isfinite(T_K) and np.isfinite(T_eV):
+            ax.annotate(f"T = {T_K:.0f} K ({T_eV:.4f} eV)", xy=(0.05, 0.95), xycoords="axes fraction",
+                        fontsize=10, verticalalignment="top")
+            print(f"Temperature: {T_K:.0f} K ({T_eV:.4f} eV)")
+    except Exception:
+        pass
+
+    if show and created_fig:
+        plt.show()
+
+    return float(slope), float(intercept)
 
 if __name__ == "__main__":
     # Edit these parameters directly instead of passing command-line CSV arguments.
