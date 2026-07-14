@@ -298,11 +298,45 @@ def plot_results(
     plt.tight_layout()
 
 
+def sample_spectrum_at_wavelengths(
+    spectrum_wavelengths_nm: np.ndarray,
+    spectrum_intensities: np.ndarray,
+    query_wavelengths_nm: np.ndarray,
+) -> np.ndarray:
+    """Sample spectrum intensity at given wavelengths using linear interpolation.
+
+    Values outside the spectrum range return NaN.
+    """
+    spectrum_wavelengths_nm = np.asarray(spectrum_wavelengths_nm, dtype=float)
+    spectrum_intensities = np.asarray(spectrum_intensities, dtype=float)
+    query_wavelengths_nm = np.asarray(query_wavelengths_nm, dtype=float)
+
+    valid = np.isfinite(spectrum_wavelengths_nm) & np.isfinite(spectrum_intensities)
+    x = spectrum_wavelengths_nm[valid]
+    y = spectrum_intensities[valid]
+    if x.size == 0:
+        return np.full_like(query_wavelengths_nm, np.nan, dtype=float)
+
+    order = np.argsort(x)
+    x = x[order]
+    y = y[order]
+
+    # Handle duplicate wavelength samples by averaging their intensities.
+    unique_x, inv = np.unique(x, return_inverse=True)
+    if unique_x.size != x.size:
+        sums = np.bincount(inv, weights=y)
+        counts = np.bincount(inv)
+        x = unique_x
+        y = sums / counts
+
+    return np.interp(query_wavelengths_nm, x, y, left=np.nan, right=np.nan)
+
+
 def main(
     csv_file: Path,
     response_file: Path | None = None,
     peak_count: int | None = None,
-    smooth_window: int = 7,
+    smooth_window: int = 1,
     min_separation: float = 1.0,
     min_prominence_ratio: float = 0.01,
     save: Path | None = None,
@@ -341,9 +375,9 @@ def main(
     # Compute shift so that the 6th detected peak is placed at 486.1 nm
     shift_offset = 0.0
     if len(indices) >= 6:
-        peak6_idx = indices[5]
-        shift_offset = float(wavelengths[peak6_idx] - 486.1)
-        print(f"Shifting wavelengths by {shift_offset:.6f} nm (peak6 at {wavelengths[peak6_idx]:.6f} -> 486.1)")
+        peak7_idx = indices[6]
+        shift_offset = float(wavelengths[peak7_idx] - 486.1)
+        print(f"Shifting wavelengths by {shift_offset:.6f} nm (peak7 at {wavelengths[peak7_idx]:.6f} -> 486.1)")
     else:
         print("Less than 6 peaks detected — no wavelength shift applied.")
 
@@ -364,18 +398,94 @@ def main(
     if show_plot:
         plt.show()
 
-    HI_lines = [410.26, 434.34, 486.1]
-    HI_intensities = [6.660306e-02, 1.072919e-01, 3.394972e-01]
-    HI_Ag = [7.0070e+07, 1.2652e+08, 2.6942e+08]
-    HI_E = [13.22070389, 13.0545017, 12.7485393]
-    boltzmann_plot(HI_lines, HI_intensities, HI_Ag, HI_E)
 
-def boltzmann_plot(lines, intensities, Ag, E, ax: plt.Axes | None = None, show: bool = True) -> tuple[float, float]:
+    HI_lines = [434.34, 486.1]
+    HI_Ag = [1.2652e+08, 2.6942e+08]
+    HI_E = [13.0545017, 12.7485393]
+
+    CII_lines = [426.66, 723.59, 589.1, 514.03, 407]
+    CII_Ag = [1.87e+09, 2.51e+08, 1.26e+08, 1.51e+08, 6.04e+08]
+    CII_E = [20.950654, 18.045987, 20.150477, 23.114048, 27.412155]
+
+    OI_lines = [776.94, 615.394617, 533.58]
+    OI_Ag = [5.53e+08, 1.91e+08, 6.778e+07]
+    OI_E = [10.7409314, 12.7537, 13.0661186]
+
+    FI_lines = [685.58, 690.23, 731.08, 775.6, 703.73, 634.69, 641.37, 740]
+    FI_Ag = [3.90e+08, 2.11e+08, 9.00e+07, 1.94e+08, 1.69e+08, 9.28e+07, 5.44e+07, 2.12e+08]
+    FI_E = [14.504588, 14.526486, 14.680382, 14.583383, 14.746284, 14.683178, 14.683178, 14.371989]
+    #FI_lines = [685.58, 690.23, 775.6]
+    #FI_Ag = [5.57e+08, 2.93e+08, 1.94e+08]
+    #FI_E = [14.504588, 14.526486, 14.583383]
+
+    SI_lines = [685.58, 690.23, 775.6]
+    SI_Ag = [5.57e+08, 2.93e+08, 1.94e+08]
+    SI_E = [14.504588, 14.526486, 14.583383]
+
+    SiII_lines = [505.5, 634.7, 636.5]
+    SiII_Ag = [8.7e+08, 2.34e+08, 1.36e+08]
+    SiII_E = [12.524588, 10.07, 10.066]
+
+    FII_lines = [444.68, 429.95]
+    FII_Ag = [2.12e+09, 1.2e+09]
+    FII_E = [31.559698, 29.548333]
+
+    # Run Boltzmann plots for all ions
+    print("\n" + "="*60)
+    print("BOLTZMANN PLOT ANALYSIS")
+    print("="*60)
+    
+    ions = [
+        ("HI", HI_lines, HI_Ag, HI_E),
+        ("CII", CII_lines, CII_Ag, CII_E),
+        ("OI", OI_lines, OI_Ag, OI_E),
+        ("FI", FI_lines, FI_Ag, FI_E),
+        ("SI", SI_lines, SI_Ag, SI_E),
+        ("SiII", SiII_lines, SiII_Ag, SiII_E),
+        ("FII", FII_lines, FII_Ag, FII_E),
+    ]
+    
+    for ion_name, lines, Ag, E in ions:
+        print(f"\n{ion_name}:")
+        fig, ax = plt.subplots(figsize=(7, 5))
+        try:
+            boltzmann_plot(
+                line_wavelengths_nm=lines,
+                spectrum_wavelengths_nm=wavelengths_shifted,
+                spectrum_intensities=smoothed,
+                Ag=Ag,
+                E=E,
+                ax=ax,
+                show=False,
+            )
+        except ValueError as exc:
+            print(f"Skipping {ion_name} Boltzmann plot: {exc}")
+            plt.close(fig)
+            continue
+        save_path = Path(f"Boltzmann_{ion_name}.png")
+        plt.savefig(save_path, dpi=160)
+        print(f"Saved Boltzmann plot to: {save_path}")
+        plt.close()
+
+
+def boltzmann_plot(
+    line_wavelengths_nm: np.ndarray,
+    spectrum_wavelengths_nm: np.ndarray,
+    spectrum_intensities: np.ndarray,
+    Ag: np.ndarray,
+    E: np.ndarray,
+    ax: plt.Axes | None = None,
+    show: bool = True,
+) -> tuple[float, float]:
     """Compute Boltzmann plot from line data and perform linear regression.
 
+    Intensities are always derived by sampling the provided spectrum at the
+    given line wavelengths.
+
     Args:
-        lines: array-like of wavelengths (lambda) in nm.
-        intensities: array-like of measured intensities.
+        line_wavelengths_nm: array-like of wavelengths (lambda) in nm.
+        spectrum_wavelengths_nm: spectrum wavelength axis in nm.
+        spectrum_intensities: spectrum intensity values (same length as spectrum_wavelengths_nm).
         Ag: array-like of A*g values for each line.
         E: array-like of excitation energies (eV) for each line.
         ax: optional Matplotlib Axes to draw on; creates one if None.
@@ -384,24 +494,46 @@ def boltzmann_plot(lines, intensities, Ag, E, ax: plt.Axes | None = None, show: 
     Returns:
         (slope, intercept) of the fitted line (log_val = slope * E + intercept).
     """
-    lines = np.asarray(lines, dtype=float)
-    intensities = np.asarray(intensities, dtype=float)
+    line_wavelengths_nm = np.asarray(line_wavelengths_nm, dtype=float)
     Ag = np.asarray(Ag, dtype=float)
     E = np.asarray(E, dtype=float)
 
-    if not (lines.shape == intensities.shape == Ag.shape == E.shape):
-        raise ValueError("`lines`, `intensities`, `Ag`, and `E` must have the same shape")
+    if not (line_wavelengths_nm.shape == Ag.shape == E.shape):
+        raise ValueError("`line_wavelengths_nm`, `Ag`, and `E` must have the same shape")
+
+    intensities = sample_spectrum_at_wavelengths(
+        spectrum_wavelengths_nm=spectrum_wavelengths_nm,
+        spectrum_intensities=spectrum_intensities,
+        query_wavelengths_nm=line_wavelengths_nm,
+    )
 
     # Compute log values for Boltzmann plot: ln(I * lambda / (A*g))
-    with np.errstate(divide="raise", invalid="raise"):
-        try:
-            log_val = np.log(intensities * lines / Ag)
-        except FloatingPointError:
-            # Fallback: use nan-safe log
-            log_val = np.log(np.where((intensities * lines / Ag) > 0, (intensities * lines / Ag), np.nan))
+    print("Boltzmann input wavelengths:", line_wavelengths_nm)
+    print("Boltzmann input intensities:", intensities)
+    ratio = intensities * line_wavelengths_nm / Ag
+    
+    ratio = np.where(np.isfinite(ratio) & (ratio > 0.0), ratio, np.nan)
+    log_val = np.log(ratio)
 
-    # Linear regression: fit log_val = slope * E + intercept
-    slope, intercept = np.polyfit(E[~np.isnan(log_val)], log_val[~np.isnan(log_val)], 1)
+    finite_mask = np.isfinite(log_val) & np.isfinite(E)
+    finite_count = int(np.sum(finite_mask))
+    if finite_count < 2:
+        raise ValueError("not enough finite line intensities inside spectrum range")
+
+    # Fit the line for all valid points; estimate covariance only when there are
+    # enough points to support an uncertainty calculation.
+    coeffs = np.polyfit(E[finite_mask], log_val[finite_mask], 1)
+    if finite_count > 2:
+        _, pcov = np.polyfit(E[finite_mask], log_val[finite_mask], 1, cov=True)
+    else:
+        pcov = None
+    slope, intercept = coeffs
+    if pcov is not None:
+        slope_std = float(np.sqrt(pcov[0, 0])) if np.isfinite(pcov[0, 0]) and pcov[0, 0] >= 0 else float("nan")
+        intercept_std = float(np.sqrt(pcov[1, 1])) if np.isfinite(pcov[1, 1]) and pcov[1, 1] >= 0 else float("nan")
+    else:
+        slope_std = float("nan")
+        intercept_std = float("nan")
 
     created_fig = False
     if ax is None:
@@ -409,8 +541,26 @@ def boltzmann_plot(lines, intensities, Ag, E, ax: plt.Axes | None = None, show: 
         created_fig = True
 
     ax.scatter(E, log_val, color="tab:blue", label="data")
-    E_line = np.linspace(np.nanmin(E), np.nanmax(E), 200)
-    ax.plot(E_line, slope * E_line + intercept, color="tab:red", label=f"fit: y={slope:.4e}x+{intercept:.4e}")
+    for e_value, log_value, wavelength_nm in zip(E[finite_mask], log_val[finite_mask], line_wavelengths_nm[finite_mask]):
+        ax.annotate(
+            f"{wavelength_nm:.2f} nm",
+            xy=(e_value, log_value),
+            xytext=(5, 5),
+            textcoords="offset points",
+            fontsize=8,
+            color="tab:blue",
+        )
+    E_line = np.linspace(np.nanmin(E[finite_mask]), np.nanmax(E[finite_mask]), 200)
+    fit_line = slope * E_line + intercept
+    ax.plot(E_line, fit_line, color="tab:red", label=f"fit: y={slope:.4e}x+{intercept:.4e}")
+    if pcov is not None:
+        fit_var = (
+            (E_line ** 2) * pcov[0, 0]
+            + 2.0 * E_line * pcov[0, 1]
+            + pcov[1, 1]
+        )
+        fit_std = np.sqrt(np.maximum(fit_var, 0.0))
+        ax.fill_between(E_line, fit_line - fit_std, fit_line + fit_std, color="tab:red", alpha=0.15, label="fit ±1σ")
     ax.set_xlabel("E (eV)")
     ax.set_ylabel("ln(I * lambda / A_g)")
     ax.grid(alpha=0.25)
@@ -421,18 +571,33 @@ def boltzmann_plot(lines, intensities, Ag, E, ax: plt.Axes | None = None, show: 
     if slope == 0 or np.isnan(slope):
         T_eV = float('nan')
         T_K = float('nan')
+        T_eV_std = float('nan')
+        T_K_std = float('nan')
     else:
         # Use physical relation: slope = -1/(k_B * T)
         # therefore T_K = -1 / (k_B * slope) and T_eV = k_B * T_K = -1 / slope
         T_K = -1.0 / (k_B_eV_per_K * slope)
         T_eV = -1.0 / slope
+        if np.isfinite(slope_std):
+            T_K_std = abs(1.0 / (k_B_eV_per_K * slope ** 2)) * slope_std
+            T_eV_std = abs(1.0 / (slope ** 2)) * slope_std
+        else:
+            T_K_std = float('nan')
+            T_eV_std = float('nan')
 
     # Annotate temperature on the plot
     try:
         if np.isfinite(T_K) and np.isfinite(T_eV):
-            ax.annotate(f"T = {T_K:.0f} K ({T_eV:.4f} eV)", xy=(0.05, 0.95), xycoords="axes fraction",
+            if np.isfinite(T_K_std) and np.isfinite(T_eV_std):
+                temp_text = f"T = {T_K:.0f} ± {T_K_std:.0f} K ({T_eV:.4f} ± {T_eV_std:.4f} eV)"
+                print(f"Temperature: {T_K:.0f} ± {T_K_std:.0f} K ({T_eV:.4f} ± {T_eV_std:.4f} eV)")
+            else:
+                temp_text = f"T = {T_K:.0f} K ({T_eV:.4f} eV)"
+                print(f"Temperature: {T_K:.0f} K ({T_eV:.4f} eV)")
+            ax.annotate(temp_text, xy=(0.05, 0.95), xycoords="axes fraction",
                         fontsize=10, verticalalignment="top")
-            print(f"Temperature: {T_K:.0f} K ({T_eV:.4f} eV)")
+            if np.isfinite(slope_std):
+                print(f"Fit covariance slope σ: {slope_std:.4e}, intercept σ: {intercept_std:.4e}")
     except Exception:
         pass
 
@@ -447,7 +612,7 @@ if __name__ == "__main__":
         csv_file=Path("S2332.csv"),
         response_file=Path("response_curve.csv"),
         peak_count=None,
-        smooth_window=7,
+        smooth_window=1,
         min_separation=1.0,
         min_prominence_ratio=0.015,
         save=Path("S2332_dominant_lines.png"),
